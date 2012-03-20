@@ -666,6 +666,10 @@ static int update_from_master(ice_config_t *config)
                 r->localmount = (char *)xmlCharStrdup (buf);
                 r->mp3metadata = 1;
                 r->on_demand = on_demand;
+                if (config->master_username)
+                        r->username = strdup(username);
+                if (config->master_password)
+                        r->password = strdup(password);
                 r->next = new_relays;
                 new_relays = r;
             }
