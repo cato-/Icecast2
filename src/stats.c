@@ -735,7 +735,7 @@ static stats_event_t *_get_event_from_queue (event_queue_t *queue)
 static int _send_event_to_client(stats_event_t *event, client_t *client)
 {
     int len;
-    char buf [200];
+    char buf [512];
 
     /* send data to the client!!!! */
     len = snprintf (buf, sizeof (buf), "EVENT %s %s %s\n",

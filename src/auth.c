@@ -569,9 +569,21 @@ void auth_add_listener (const char *mount, client_t *client)
  */
 int auth_release_listener (client_t *client)
 {
+    const char *mount = httpp_getvar (client->parser, HTTPP_VAR_URI);
+
+    if (client->format_data != NULL) {
+        time_t now = time(NULL);
+        time_t stayed = now - client->con->con_time;
+
+        stats_event_args(mount, "listener_disconnected", 
+           "{\"ip\": \"%s\", \"port\": %i, \"sent_bytes\": %" PRIu64 ", \"connected_time\": %lu}",
+           client->con->ip,
+           client->con->port,
+           client->con->sent_bytes,
+           (unsigned long)stayed);
+    }
     if (client->authenticated)
     {
-        const char *mount = httpp_getvar (client->parser, HTTPP_VAR_URI);
 
         /* drop any queue reference here, we do not want a race between the source thread
          * and the auth/fserve thread */

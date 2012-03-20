@@ -29,6 +29,8 @@
 #ifdef HAVE_SYS_TYPES_H
 # include <sys/types.h>
 #endif
+#include <sys/socket.h>
+#include <netinet/in.h>
 
 #include "connection.h"
 #include "refbuf.h"
@@ -215,6 +217,57 @@ int format_check_http_buffer (source_t *source, client_t *client)
         }
         client->respcode = 200;
         stats_event_inc (NULL, "listeners");
+
+        char reqbuf[1024];
+        /* build the request */
+        snprintf (reqbuf, sizeof(reqbuf), "%s %s %s/%s",
+                httpp_getvar (client->parser, HTTPP_VAR_REQ_TYPE),
+                httpp_getvar (client->parser, HTTPP_VAR_URI),
+                httpp_getvar (client->parser, HTTPP_VAR_PROTOCOL),
+                httpp_getvar (client->parser, HTTPP_VAR_VERSION));
+
+        const char *referrer, *user_agent, *username;
+        if (client->username == NULL)
+            username = "-";
+        else
+            username = client->username;
+
+        referrer = httpp_getvar (client->parser, "referer");
+        if (referrer == NULL)
+            referrer = "-";
+
+        user_agent = httpp_getvar (client->parser, "user-agent");
+        if (user_agent == NULL)
+            user_agent = "-";
+
+        socklen_t len;
+        struct sockaddr_storage addr;
+        int peer_port;
+        len = sizeof addr;
+        getpeername(client->con->sock, (struct sockaddr*)&addr, &len);
+
+        // deal with both IPv4 and IPv6:
+        if (addr.ss_family == AF_INET) {
+            struct sockaddr_in *s = (struct sockaddr_in *)&addr;
+            peer_port = ntohs(s->sin_port);
+        } else { // AF_INET6
+            struct sockaddr_in6 *s = (struct sockaddr_in6 *)&addr;
+            peer_port = ntohs(s->sin6_port);
+        }
+
+        client->con->port = peer_port;
+        stats_event_args(source->mount, "listener_connected", 
+            "{\"ip\": \"%s\", \"port\": %i, \"request_type\": \"%s\", \"request_uri\": \"%s\", \"protocol\": \"%s/%s\", \"username\": \"%s\", \"referer\": \"%s\", \"user-agent\": \"%s\"}",
+            client->con->ip,
+            peer_port,
+            httpp_getvar (client->parser, HTTPP_VAR_REQ_TYPE),
+            httpp_getvar (client->parser, HTTPP_VAR_URI),
+            httpp_getvar (client->parser, HTTPP_VAR_PROTOCOL),
+            httpp_getvar (client->parser, HTTPP_VAR_VERSION),
+            username,
+            referrer,
+            user_agent);
+
         stats_event_inc (NULL, "listener_connections");
         stats_event_inc (source->mount, "listener_connections");
     }
