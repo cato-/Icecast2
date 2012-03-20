@@ -1019,6 +1019,9 @@ static void command_list_mounts(client_t *client, int response)
         client->refbuf->len = strlen (client->refbuf->data);
         client->respcode = 200;
 
+        const char *url = httpp_getvar(client->parser, "x-origin");
+        stats_event_args(NULL, "relay_url", "%s", url);
+
         client->refbuf->next = stats_get_streams ();
         fserve_add_client (client, NULL);
     }

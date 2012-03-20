@@ -633,7 +633,8 @@ static int update_from_master(ice_config_t *config)
         sock_write (mastersock,
                 "GET /admin/streamlist.txt HTTP/1.0\r\n"
                 "Authorization: Basic %s\r\n"
-                "\r\n", data);
+                "X-Origin: http://%s:%s@%s:%d\r\n"
+                "\r\n", data, config->relay_username, config->relay_password, config->hostname, config->port);
         free(authheader);
         free(data);
 
