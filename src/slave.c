@@ -39,6 +39,10 @@
 
 #include "compat.h"
 
+#ifdef HAVE_LIBURIPARSER
+#include "uriparser/Uri.h"
+#endif
+
 #include "thread/thread.h"
 #include "avl/avl.h"
 #include "net/sock.h"
@@ -589,6 +593,17 @@ static void relay_check_streams (relay_server *to_start,
     }
 }
 
+#ifdef HAVE_LIBURIPARSER
+static char* range_to_string(UriTextRangeA * range) {
+  if (range->first != NULL) {
+    const int charsToWrite = strlen(range->first) - strlen(range->afterLast);
+    char * result = calloc(charsToWrite, sizeof(URI_CHAR));
+    strncpy(result, range->first, charsToWrite);
+    return result;
+  }
+  return NULL;
+}
+#endif
 
 static int update_from_master(ice_config_t *config)
 {
@@ -657,13 +672,70 @@ static int update_from_master(ice_config_t *config)
             if (!strlen(buf))
                 continue;
             DEBUG2 ("read %d from master \"%s\"", count++, buf);
+#ifdef HAVE_LIBURIPARSER
+            UriParserStateA state;
+            UriUriA uri;
+            state.uri = &uri;
+            if (uriParseUriA(&state, buf) != URI_SUCCESS) {
+              /* Failure */
+              uriFreeUriMembersA(&uri);
+              continue;
+            }
+#endif
             r = calloc (1, sizeof (relay_server));
             if (r)
             {
+#ifdef HAVE_LIBURIPARSER
+                int have_host = 0;
+                // Get host from parsed string
+                char * host = range_to_string(&uri.hostText);
+                if (host != NULL) {
+                  r->server = host;
+                  // Try to get port from uri
+                  char * port_text = range_to_string(&uri.portText);
+                  if (port_text != NULL) {
+                    r->port = atoi(port_text);
+                    have_host = 1;
+                  } else {  // if not present, use default port
+                    r->port = 80;
+                  }
+                }
+
+                // If no host is present in the uri, use master host and port
+                if (!have_host) {
+                  free(host);
+                  r->server = (char *)xmlCharStrdup (master);
+                  r->port = port;
+                }
+
+                // Get path from uri
+                UriPathSegmentA * walker = uri.pathHead;
+                char * path = "/";
+                // loop over all segments, joining segments with "/"
+                while (walker != NULL) {
+                  char * path_seg = range_to_string(&walker->text);
+                  int len = strlen(path)+strlen(path_seg);
+                  if (walker->next != NULL)
+                    len += 1;
+                  len *= sizeof(URI_CHAR);
+                  char * new_path = malloc(len);
+                  strcpy(new_path, path);
+                  strcat(new_path, path_seg);
+                  if (walker->next != NULL)
+                    strcat(new_path, "/");
+                  path = new_path;
+                  walker = walker->next;
+                }
+                // use path also for local mount
+                r->mount = strdup(path);
+                r->localmount = strdup(path);
+                uriFreeUriMembersA(&uri);
+#else
                 r->server = (char *)xmlCharStrdup (master);
                 r->port = port;
                 r->mount = (char *)xmlCharStrdup (buf);
                 r->localmount = (char *)xmlCharStrdup (buf);
+#endif
                 r->mp3metadata = 1;
                 r->on_demand = on_demand;
                 if (config->master_username)
@@ -671,6 +743,7 @@ static int update_from_master(ice_config_t *config)
                 if (config->master_password)
                         r->password = strdup(password);
                 r->next = new_relays;
+                DEBUG3 ("Added relay host=\"%s\", port=%d, mount=\"%s\"", r->server, r->port, r->mount);
                 new_relays = r;
             }
         }
